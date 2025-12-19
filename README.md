@@ -7,6 +7,10 @@ Real-time depth estimation from webcam feed using Depth-Anything-V2 model.
 - Real-time depth estimation from webcam
 - Multiple model sizes (small, base, large)
 - Side-by-side visualization of original frame and depth map
+- Depth discontinuity detection - identify objects and boundaries based on depth changes
+- Contour detection for depth edges
+- Adjustable edge detection threshold
+- Toggle between depth view and contour view
 - Save snapshots with 's' key
 - GPU acceleration support
 
@@ -65,7 +69,7 @@ python webcam_depth.py
 
 With custom options:
 ```bash
-python webcam_depth.py --model-size base --camera 0 --width 640 --height 480
+python webcam_depth.py --model-size base --camera 0 --width 640 --height 480 --edge-threshold 0.15
 ```
 
 ### Command-line Arguments
@@ -75,11 +79,24 @@ python webcam_depth.py --model-size base --camera 0 --width 640 --height 480
 - `--camera`: Camera device index. Default: `0`
 - `--width`: Camera capture width. Default: `640`
 - `--height`: Camera capture height. Default: `480`
+- `--edge-threshold`: Threshold for depth edge detection (0-1). Default: `0.1`
+- `--min-contour-area`: Minimum contour area to display in pixels. Default: `100`
 
 ### Controls
 
 - **q**: Quit the application
-- **s**: Save current frame and depth map
+- **s**: Save current frame and depth map (also saves contours and edges in contour mode)
+- **c**: Toggle between depth view and contour view
+- **+/=**: Increase edge detection threshold (makes contours less sensitive)
+- **-/_**: Decrease edge detection threshold (makes contours more sensitive)
+
+### Display Modes
+
+**Depth Mode (default)**: Shows original frame on left, colorized depth map on right
+
+**Contour Mode**: Shows original frame with depth contours on left, edge map on right
+- Green contours highlight areas with significant depth changes
+- Useful for detecting object boundaries, edges, and depth discontinuities
 
 ## Project Structure
 
@@ -120,7 +137,23 @@ camera-depth/
 - Reduce camera resolution
 - Use GPU if available
 
+## How Depth Contour Detection Works
+
+The contour detection feature identifies areas where depth changes significantly:
+
+1. **Depth Gradients**: Calculates the gradient (rate of change) of depth values using Sobel operators
+2. **Edge Detection**: Applies threshold to find significant depth discontinuities
+3. **Contour Finding**: Identifies closed contours around regions with depth edges
+4. **Filtering**: Removes small noise contours based on minimum area
+
+This is useful for:
+- Detecting object boundaries in 3D space
+- Identifying obstacles and edges
+- Segmenting objects based on depth
+- Finding transitions between foreground and background
+
 ## References
 
 - [Depth-Anything-V2 GitHub](https://github.com/DepthAnything/Depth-Anything-V2)
 - [Depth-Anything-V2 Paper](https://arxiv.org/abs/2406.09414)
+- [depth-anything-v2 on PyPI](https://pypi.org/project/depth-anything-v2/)

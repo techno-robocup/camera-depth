@@ -96,6 +96,80 @@ def process_frame(model, frame, device):
     return depth
 
 
+def detect_depth_edges(depth, threshold=0.1, blur_ksize=5):
+    """
+    Detect edges in depth map where there are significant depth discontinuities
+
+    Args:
+        depth: Depth map (numpy array)
+        threshold: Threshold for edge detection (0-1, relative to depth range)
+        blur_ksize: Kernel size for Gaussian blur preprocessing
+
+    Returns:
+        Binary edge map
+    """
+    # Normalize depth
+    depth_normalized = (depth - depth.min()) / (depth.max() - depth.min() + 1e-8)
+    depth_normalized = (depth_normalized * 255).astype(np.uint8)
+
+    # Apply Gaussian blur to reduce noise
+    depth_blurred = cv2.GaussianBlur(depth_normalized, (blur_ksize, blur_ksize), 0)
+
+    # Calculate gradients using Sobel
+    grad_x = cv2.Sobel(depth_blurred, cv2.CV_64F, 1, 0, ksize=3)
+    grad_y = cv2.Sobel(depth_blurred, cv2.CV_64F, 0, 1, ksize=3)
+
+    # Calculate gradient magnitude
+    gradient_magnitude = np.sqrt(grad_x**2 + grad_y**2)
+
+    # Normalize gradient
+    gradient_magnitude = (gradient_magnitude / gradient_magnitude.max() * 255).astype(np.uint8)
+
+    # Apply threshold
+    threshold_value = int(threshold * 255)
+    _, edges = cv2.threshold(gradient_magnitude, threshold_value, 255, cv2.THRESH_BINARY)
+
+    return edges
+
+
+def find_depth_contours(edges, min_area=100):
+    """
+    Find contours in the edge map
+
+    Args:
+        edges: Binary edge map
+        min_area: Minimum contour area to keep
+
+    Returns:
+        List of contours
+    """
+    # Find contours
+    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    # Filter by area
+    filtered_contours = [cnt for cnt in contours if cv2.contourArea(cnt) > min_area]
+
+    return filtered_contours
+
+
+def draw_depth_contours(frame, contours, color=(0, 255, 0), thickness=2):
+    """
+    Draw contours on frame
+
+    Args:
+        frame: Frame to draw on
+        contours: List of contours
+        color: BGR color for contours
+        thickness: Line thickness
+
+    Returns:
+        Frame with contours drawn
+    """
+    result = frame.copy()
+    cv2.drawContours(result, contours, -1, color, thickness)
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description='Webcam Depth Detection using Depth-Anything-V2')
     parser.add_argument('--model-size', type=str, default='small',
@@ -109,6 +183,10 @@ def main():
                         help='Camera capture width')
     parser.add_argument('--height', type=int, default=480,
                         help='Camera capture height')
+    parser.add_argument('--edge-threshold', type=float, default=0.1,
+                        help='Threshold for depth edge detection (0-1)')
+    parser.add_argument('--min-contour-area', type=int, default=100,
+                        help='Minimum contour area to display')
 
     args = parser.parse_args()
 
@@ -128,9 +206,16 @@ def main():
         return
 
     print("Starting webcam depth detection...")
-    print("Press 'q' to quit, 's' to save current depth map")
+    print("Controls:")
+    print("  'q' - Quit")
+    print("  's' - Save current frame and depth map")
+    print("  'c' - Toggle contour display mode")
+    print("  '+' - Increase edge threshold")
+    print("  '-' - Decrease edge threshold")
 
     frame_count = 0
+    show_contours = False
+    edge_threshold = args.edge_threshold
 
     try:
         while True:
@@ -138,6 +223,7 @@ def main():
             if not ret:
                 print("Error: Failed to capture frame")
                 break
+
             # Process frame
             depth = process_frame(model, frame, args.device)
 
@@ -147,17 +233,38 @@ def main():
             # Resize depth map to match frame size
             depth_colored = cv2.resize(depth_colored, (frame.shape[1], frame.shape[0]))
 
-            # Create side-by-side display
-            combined = np.hstack([frame, depth_colored])
+            # Detect depth edges and contours
+            edges = detect_depth_edges(depth, threshold=edge_threshold)
+            edges_resized = cv2.resize(edges, (frame.shape[1], frame.shape[0]))
+            contours = find_depth_contours(edges_resized, min_area=args.min_contour_area)
 
-            # Add FPS counter
+            # Create display based on mode
+            if show_contours:
+                # Draw contours on original frame
+                frame_with_contours = draw_depth_contours(frame, contours, color=(0, 255, 0), thickness=2)
+
+                # Convert edges to BGR for display
+                edges_bgr = cv2.cvtColor(edges_resized, cv2.COLOR_GRAY2BGR)
+
+                # Create side-by-side display: Original with contours | Edge map
+                combined = np.hstack([frame_with_contours, edges_bgr])
+                window_title = 'Depth Contours - Frame with Contours | Edge Map'
+            else:
+                # Create side-by-side display: Original | Depth
+                combined = np.hstack([frame, depth_colored])
+                window_title = 'Webcam Depth Detection - Original | Depth'
+
+            # Add info text
             frame_count += 1
-            if frame_count % 30 == 0:
-                cv2.putText(combined, f"Frame: {frame_count}", (10, 30),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            info_text = f"Frame: {frame_count} | Mode: {'Contours' if show_contours else 'Depth'}"
+            if show_contours:
+                info_text += f" | Threshold: {edge_threshold:.2f} | Contours: {len(contours)}"
+
+            cv2.putText(combined, info_text, (10, 30),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
             # Display
-            cv2.imshow('Webcam Depth Detection - Original | Depth', combined)
+            cv2.imshow(window_title, combined)
 
             # Handle keyboard input
             key = cv2.waitKey(1) & 0xFF
@@ -167,7 +274,26 @@ def main():
                 # Save current frame and depth map
                 cv2.imwrite(f'frame_{frame_count}.jpg', frame)
                 cv2.imwrite(f'depth_{frame_count}.jpg', depth_colored)
-                print(f"Saved frame_{frame_count}.jpg and depth_{frame_count}.jpg")
+                if show_contours:
+                    frame_with_contours_final = draw_depth_contours(frame, contours, color=(0, 255, 0), thickness=2)
+                    cv2.imwrite(f'contours_{frame_count}.jpg', frame_with_contours_final)
+                    cv2.imwrite(f'edges_{frame_count}.jpg', edges_resized)
+                    print(f"Saved frame, depth, contours, and edges for frame {frame_count}")
+                else:
+                    print(f"Saved frame_{frame_count}.jpg and depth_{frame_count}.jpg")
+            elif key == ord('c'):
+                # Toggle contour mode
+                show_contours = not show_contours
+                cv2.destroyAllWindows()
+                print(f"Contour mode: {'ON' if show_contours else 'OFF'}")
+            elif key == ord('+') or key == ord('='):
+                # Increase threshold
+                edge_threshold = min(1.0, edge_threshold + 0.01)
+                print(f"Edge threshold: {edge_threshold:.2f}")
+            elif key == ord('-') or key == ord('_'):
+                # Decrease threshold
+                edge_threshold = max(0.01, edge_threshold - 0.01)
+                print(f"Edge threshold: {edge_threshold:.2f}")
 
     finally:
         cap.release()
