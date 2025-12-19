@@ -37,6 +37,7 @@ wheels/
 venv/
 env/
 ENV/
+.direnv/
 
 # IDE
 .vscode/
