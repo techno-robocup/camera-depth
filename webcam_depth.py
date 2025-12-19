@@ -170,6 +170,79 @@ def draw_depth_contours(frame, contours, color=(0, 255, 0), thickness=2):
     return result
 
 
+def process_image_file(image_path, model, device, output_dir, edge_threshold=0.1, min_contour_area=100):
+    """
+    Process a single image file and save all outputs
+
+    Args:
+        image_path: Path to input image
+        model: Depth-Anything-V2 model
+        device: torch device
+        output_dir: Directory to save outputs
+        edge_threshold: Threshold for edge detection
+        min_contour_area: Minimum contour area
+    """
+    import os
+    from pathlib import Path
+
+    # Read image
+    frame = cv2.imread(image_path)
+    if frame is None:
+        print(f"Error: Could not read image from {image_path}")
+        return
+
+    print(f"Processing image: {image_path}")
+    print(f"Image size: {frame.shape[1]}x{frame.shape[0]}")
+
+    # Create output directory
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    # Get base filename
+    base_name = Path(image_path).stem
+
+    # Process frame
+    print("Generating depth map...")
+    depth = process_frame(model, frame, device)
+
+    # Colorize depth
+    depth_colored = colorize_depth(depth)
+    depth_colored = cv2.resize(depth_colored, (frame.shape[1], frame.shape[0]))
+
+    # Detect edges and contours
+    print("Detecting depth edges and contours...")
+    edges = detect_depth_edges(depth, threshold=edge_threshold)
+    edges_resized = cv2.resize(edges, (frame.shape[1], frame.shape[0]))
+    contours = find_depth_contours(edges_resized, min_area=min_contour_area)
+
+    # Draw contours
+    frame_with_contours = draw_depth_contours(frame, contours, color=(0, 255, 0), thickness=2)
+
+    # Save outputs
+    print(f"Saving outputs to {output_dir}/")
+    cv2.imwrite(str(output_path / f"{base_name}_original.jpg"), frame)
+    cv2.imwrite(str(output_path / f"{base_name}_depth.jpg"), depth_colored)
+    cv2.imwrite(str(output_path / f"{base_name}_contours.jpg"), frame_with_contours)
+    cv2.imwrite(str(output_path / f"{base_name}_edges.jpg"), edges_resized)
+
+    # Create side-by-side visualizations
+    combined_depth = np.hstack([frame, depth_colored])
+    edges_bgr = cv2.cvtColor(edges_resized, cv2.COLOR_GRAY2BGR)
+    combined_contours = np.hstack([frame_with_contours, edges_bgr])
+
+    cv2.imwrite(str(output_path / f"{base_name}_combined_depth.jpg"), combined_depth)
+    cv2.imwrite(str(output_path / f"{base_name}_combined_contours.jpg"), combined_contours)
+
+    print(f"\nSaved files:")
+    print(f"  - {base_name}_original.jpg")
+    print(f"  - {base_name}_depth.jpg")
+    print(f"  - {base_name}_contours.jpg (found {len(contours)} contours)")
+    print(f"  - {base_name}_edges.jpg")
+    print(f"  - {base_name}_combined_depth.jpg")
+    print(f"  - {base_name}_combined_contours.jpg")
+    print("\nProcessing complete!")
+
+
 def main():
     parser = argparse.ArgumentParser(description='Webcam Depth Detection using Depth-Anything-V2')
     parser.add_argument('--model-size', type=str, default='small',
@@ -177,6 +250,10 @@ def main():
                         help='Model size: small, base, or large')
     parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu',
                         help='Device to use: cuda or cpu')
+    parser.add_argument('--image', type=str, default=None,
+                        help='Path to input image (if not specified, uses webcam)')
+    parser.add_argument('--output', type=str, default='output',
+                        help='Output directory for processed images (default: output/)')
     parser.add_argument('--camera', type=int, default=0,
                         help='Camera device index')
     parser.add_argument('--width', type=int, default=640,
@@ -195,6 +272,13 @@ def main():
 
     # Initialize model
     model = setup_model(args.model_size, args.device)
+
+    # Check if processing a single image or webcam
+    if args.image:
+        # Process single image
+        process_image_file(args.image, model, args.device, args.output,
+                          args.edge_threshold, args.min_contour_area)
+        return
 
     # Initialize webcam
     cap = cv2.VideoCapture(args.camera)

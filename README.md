@@ -62,6 +62,8 @@ wget -P checkpoints https://huggingface.co/depth-anything/Depth-Anything-V2-Larg
 
 ## Usage
 
+### Webcam Mode (Real-time)
+
 Basic usage with default settings (small model, camera 0):
 ```bash
 python webcam_depth.py
@@ -72,17 +74,44 @@ With custom options:
 python webcam_depth.py --model-size base --camera 0 --width 640 --height 480 --edge-threshold 0.15
 ```
 
+### Image Mode (Process single image)
+
+Process a single image and save all outputs:
+```bash
+python webcam_depth.py --image path/to/image.jpg --output results/
+```
+
+This will create the following files in the output directory:
+- `{filename}_original.jpg` - Original input image
+- `{filename}_depth.jpg` - Colorized depth map
+- `{filename}_contours.jpg` - Image with depth contours drawn
+- `{filename}_edges.jpg` - Depth edge map
+- `{filename}_combined_depth.jpg` - Side-by-side original and depth
+- `{filename}_combined_contours.jpg` - Side-by-side contours and edges
+
+With custom settings:
+```bash
+python webcam_depth.py --image photo.jpg --output my_results/ --edge-threshold 0.2 --min-contour-area 200
+```
+
 ### Command-line Arguments
 
+**General:**
 - `--model-size`: Model size to use (`small`, `base`, or `large`). Default: `small`
 - `--device`: Device to use (`cuda` or `cpu`). Default: auto-detect
-- `--camera`: Camera device index. Default: `0`
-- `--width`: Camera capture width. Default: `640`
-- `--height`: Camera capture height. Default: `480`
 - `--edge-threshold`: Threshold for depth edge detection (0-1). Default: `0.1`
 - `--min-contour-area`: Minimum contour area to display in pixels. Default: `100`
 
-### Controls
+**Image Mode:**
+- `--image`: Path to input image. If specified, processes single image instead of webcam
+- `--output`: Output directory for processed images. Default: `output/`
+
+**Webcam Mode:**
+- `--camera`: Camera device index. Default: `0`
+- `--width`: Camera capture width. Default: `640`
+- `--height`: Camera capture height. Default: `480`
+
+### Controls (Webcam Mode Only)
 
 - **q**: Quit the application
 - **s**: Save current frame and depth map (also saves contours and edges in contour mode)
@@ -106,8 +135,10 @@ camera-depth/
 ├── requirements.txt      # Python dependencies
 ├── setup.sh             # Automated setup script
 ├── README.md            # This file
-└── checkpoints/         # Model weights directory
-    └── depth_anything_v2_*.pth
+├── checkpoints/         # Model weights directory
+│   └── depth_anything_v2_*.pth
+└── output/              # Default output directory for processed images
+    └── (generated files)
 ```
 
 ## Performance Tips

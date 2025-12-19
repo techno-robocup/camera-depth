@@ -3,9 +3,12 @@ checkpoints/
 *.pth
 *.pt
 
-# Generated images
+# Generated images and output
+output/
 frame_*.jpg
 depth_*.jpg
+contours_*.jpg
+edges_*.jpg
 *.png
 
 # Python
